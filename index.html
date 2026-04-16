@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Offline Video Compressor</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 600px; margin: 3rem auto; padding: 1rem;
+            text-align: center; background-color: #f9fafb; color: #111827;
+        }
+        .card {
+            background: white; padding: 2rem; border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        }
+        button {
+            background-color: #3b82f6; color: white; border: none;
+            padding: 10px 20px; font-size: 16px; border-radius: 6px;
+            cursor: pointer; margin-top: 15px; transition: 0.2s;
+        }
+        button:disabled { background-color: #9ca3af; cursor: not-allowed; }
+        button:hover:not(:disabled) { background-color: #2563eb; }
+        #status { margin-top: 20px; font-weight: 500; color: #4b5563; }
+        video { max-width: 100%; margin-top: 20px; border-radius: 8px; display: none; }
+        .download-btn {
+            display: none; background-color: #10b981; text-decoration: none;
+            color: white; padding: 10px 20px; border-radius: 6px; margin-top: 15px;
+        }
+        .download-btn:hover { background-color: #059669; }
+    </style>
+
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
+    <script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
+</head>
+<body>
+
+    <div class="card">
+        <h2>Offline Video Compressor</h2>
+        <p>Powered by FFmpeg.wasm</p>
+        
+        <input type="file" id="uploader" accept="video/*" disabled>
+        <br>
+        <button id="compressBtn" disabled>Loading Engine...</button>
+        
+        <div id="status">Fetching engine files...</div>
+        
+        <video id="outputVideo" controls></video>
+        <br>
+        <a id="downloadLink" class="download-btn" download="compressed.mp4">Download Video</a>
+    </div>
+
+    <script>
+        const { FFmpeg } = window.FFmpegWASM;
+        const { fetchFile, toBlobURL } = window.FFmpegUtil;
+
+        const ffmpeg = new FFmpeg();
+        const compressBtn = document.getElementById('compressBtn');
+        const uploader = document.getElementById('uploader');
+        const status = document.getElementById('status');
+        const outputVideo = document.getElementById('outputVideo');
+        const downloadLink = document.getElementById('downloadLink');
+
+        ffmpeg.on('log', ({ message }) => {
+            console.log("[FFmpeg]:", message);
+        });
+
+        ffmpeg.on('progress', ({ progress }) => {
+            const percentage = Math.round(progress * 100);
+            status.innerText = `Compressing: ${percentage}%`;
+        });
+
+        async function loadFFmpeg() {
+            try {
+                // THE FIX:
+                // 1. Core files MUST be 'esm' because ffmpeg internal logic uses import()
+                const coreURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+                // 2. Worker file MUST be 'umd' to match our script tags
+                const workerURL = 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/814.ffmpeg.js';
+                
+                status.innerText = "Downloading engine and bypassing CORS...";
+
+                await ffmpeg.load({
+                    coreURL: await toBlobURL(`${coreURL}/ffmpeg-core.js`, 'text/javascript'),
+                    wasmURL: await toBlobURL(`${coreURL}/ffmpeg-core.wasm`, 'application/wasm'),
+                    classWorkerURL: await toBlobURL(workerURL, 'text/javascript')
+                });
+                
+                status.innerText = "Engine Ready! Select a video.";
+                uploader.disabled = false;
+                compressBtn.disabled = false;
+                compressBtn.innerText = "Compress Video";
+                
+            } catch (error) {
+                status.innerText = "Failed to load engine. Check console.";
+                console.error("LOAD ERROR:", error);
+            }
+        }
+
+        loadFFmpeg();
+
+        compressBtn.addEventListener('click', async () => {
+            const file = uploader.files[0];
+            if (!file) return alert('Please select a file first.');
+
+            compressBtn.disabled = true;
+            uploader.disabled = true;
+            status.innerText = "Reading file into memory...";
+
+            try {
+                await ffmpeg.writeFile('input.mp4', await fetchFile(file));
+                status.innerText = "Starting compression...";
+
+                await ffmpeg.exec([
+                    '-i', 'input.mp4', 
+                    '-vf', 'scale=-2:480', 
+                    '-b:v', '1000k',
+                    '-preset', 'ultrafast', 
+                    'output.mp4'
+                ]);
+
+                status.innerText = "Preparing download...";
+                const data = await ffmpeg.readFile('output.mp4');
+                const blob = new Blob([data.buffer], { type: 'video/mp4' });
+                const url = URL.createObjectURL(blob);
+
+                outputVideo.src = url;
+                outputVideo.style.display = "block";
+                
+                downloadLink.href = url;
+                downloadLink.style.display = "inline-block";
+                
+                status.innerText = "Compression Complete!";
+            } catch (error) {
+                status.innerText = "Compression failed. Check console.";
+                console.error("COMPRESSION ERROR:", error);
+            } finally {
+                compressBtn.disabled = false;
+                uploader.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
