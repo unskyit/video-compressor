@@ -650,6 +650,7 @@
     }
 
     // --- BATCH ENGINE INITIALIZATION ---
+   // Initialize Engine (Hybrid CDN Architecture)
     async function initFFmpeg() {
         if (ffmpeg && ffmpeg.loaded) return;
         
@@ -657,12 +658,17 @@
         ffmpeg.on('progress', updateTelemetry);
         ffmpeg.on('log', ({ message }) => console.log("Engine:", message));
 
-        const localLibPath = './lib';
+        document.getElementById('statusText').textContent = "Summoning Cloud Engine... ✨";
         
+        // Pointing to jsDelivr just like you suggested!
+        const coreBase = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm';
+        const umdBase = 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd';
+        
+        // We still use toBlobURL to bypass Cross-Origin blocks
         await ffmpeg.load({
-            coreURL: await toBlobURL(`${localLibPath}/ffmpeg-core.js`, 'text/javascript'),
-            wasmURL: await toBlobURL(`${localLibPath}/ffmpeg-core.wasm`, 'application/wasm'),
-            classWorkerURL: await toBlobURL(`${localLibPath}/814.ffmpeg.js`, 'text/javascript')
+            coreURL: await toBlobURL(`${coreBase}/ffmpeg-core.js`, 'text/javascript'),
+            wasmURL: await toBlobURL(`${coreBase}/ffmpeg-core.wasm`, 'application/wasm'),
+            classWorkerURL: await toBlobURL(`${umdBase}/814.ffmpeg.js`, 'text/javascript')
         });
     }
 
